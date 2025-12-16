@@ -5,8 +5,10 @@ import Livro from 'App/Models/Livro'
 import { validateCreate } from 'App/Validators/emprestimo'
 import Env from '@ioc:Adonis/Core/Env'
 import { DateTime } from 'luxon'
+import Devolucaoemulta from 'App/Models/Devolucaoemulta'
 
 const DEFAULT_LOAN_DAYS = Number(Env.get('LOAN_DAYS', '14'))
+const DAILY_FINE = Number(Env.get('DAILY_FINE', '1.00'))
 
 export default class EmprestimosController {
   async index({ request, response }: HttpContext) {
@@ -42,6 +44,10 @@ export default class EmprestimosController {
       .count('* as total')
 
     if (Number((overdue[0] as any).total) > 0) return response.status(403).json({ message: 'Usuário possui empréstimos atrasados' })
+
+    // Check user unpaid fines
+    const unpaid = await Devolucaoemulta.query().where('user_id', user.id).andWhere('paid', false).count('* as total')
+    if (Number((unpaid[0] as any).total) > 0) return response.status(403).json({ message: 'Usuário possui multas pendentes' })
 
     // Check user's active loans count (limit 3)
     const activeCountRes = await Emprestimo.query().where('user_id', user.id).andWhere('returned_at', null).count('* as total')
@@ -79,8 +85,8 @@ export default class EmprestimosController {
     const e = await Emprestimo.find(params.id)
     if (!e) return response.status(404).json({ message: 'Empréstimo não encontrado' })
     if (e.returnedAt) return response.status(400).json({ message: 'Já retornado' })
-
-    e.returnedAt = DateTime.local()
+    const returnedAt = DateTime.local()
+    e.returnedAt = returnedAt
     e.active = false
     await e.save()
 
@@ -88,6 +94,24 @@ export default class EmprestimosController {
     if (livro) {
       livro.quantityAvailable = (livro.quantityAvailable ?? 0) + 1
       await livro.save()
+    }
+
+    // Calculate fine if overdue
+    if (returnedAt > e.dueDate) {
+      const diff = returnedAt.diff(e.dueDate, 'days').days
+      const daysLate = Math.ceil(diff)
+      const dailyRate = DAILY_FINE
+      const amount = Number((daysLate * dailyRate).toFixed(2))
+
+      await Devolucaoemulta.create({
+        emprestimoId: e.id,
+        userId: e.userId,
+        daysLate,
+        dailyRate,
+        amount,
+        paid: false,
+        paidAt: null,
+      })
     }
 
     return response.ok(e)
@@ -109,8 +133,4 @@ export default class EmprestimosController {
     await e.delete()
     return response.status(204).send(null)
   }
-}
-// import type { HttpContext } from '@adonisjs/core/http'
-
-export default class EmprestimosController {
 }

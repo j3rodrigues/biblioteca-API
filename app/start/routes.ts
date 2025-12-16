@@ -28,3 +28,8 @@ router.post('/emprestimos', 'EmprestimosController.store')
 router.get('/emprestimos/:id', 'EmprestimosController.show')
 router.post('/emprestimos/:id/return', 'EmprestimosController.return')
 router.delete('/emprestimos/:id', 'EmprestimosController.destroy')
+
+// Multas / Devoluções
+router.get('/multas', 'DevolucaoemultasController.index')
+router.get('/multas/:id', 'DevolucaoemultasController.show')
+router.post('/multas/:id/pay', 'DevolucaoemultasController.pay')
